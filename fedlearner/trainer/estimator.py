@@ -18,23 +18,50 @@
 import time
 
 import tensorflow.compat.v1 as tf
-from tensorflow.python.estimator.util import parse_input_fn_result #pylint: disable=no-name-in-module
+from tensorflow.python.estimator.util import parse_input_fn_result  # pylint: disable=no-name-in-module
 
 from tensorflow_estimator.python.estimator import model_fn as model_fn_lib
 from fedlearner.common import fl_logging
 from fedlearner.privacy.splitnn.marvell import KL_gradient_perturb
 
 class FLModel(object):
-    def __init__(self, role, bridge, example_ids, exporting=False):
+    def __init__(self, role, bridge, example_ids, self_seed, other_seed, batch_num, exporting=False):
         self._role = role
         self._bridge = bridge
         self._example_ids = example_ids
+        self._self_seed = self_seed
+        self._other_seed = other_seed
+        self._batch_num = batch_num
         self._exporting = exporting
 
         self._train_ops = []
         self._recvs = []
         self._sends = []
         self._outputs = []
+
+    @property
+    def role(self):
+        return self._role
+
+    @property
+    def bridge(self):
+        return self._bridge
+
+    @property
+    def example_ids(self):
+        return self._example_ids
+
+    @property
+    def self_seed(self):
+        return self._self_seed
+
+    @property
+    def other_seed(self):
+        return self._other_seed
+
+    @property
+    def batch_num(self):
+        return self._batch_num
 
     @property
     def train_ops(self):
@@ -49,7 +76,7 @@ class FLModel(object):
         return [(n, t) for n, t, _ in self._recvs]
 
     def verify_example_ids(self):
-        tensor = tf.strings.to_hash_bucket_fast(self._example_ids, 2**31 - 1)
+        tensor = tf.strings.to_hash_bucket_fast(self._example_ids, 2 ** 31 - 1)
         if self._role == 'leader':
             self.send('_verify_example_ids', tensor)
         else:
@@ -57,21 +84,39 @@ class FLModel(object):
             op = tf.assert_equal(tensor, recv_tensor)
             self._train_ops.append(op)
 
-    def send(self, name, tensor, require_grad=False):
-        with tf.control_dependencies([self._example_ids]):
-            send_op = self._bridge.send_op(name, tensor)
+    def send(self, name, tensor, require_grad=False, depend_tensor=False):
+        if depend_tensor:
+            with tf.control_dependencies([tensor]):
+                send_op = self._bridge.send_op(name, tensor)
+        else:
+            with tf.control_dependencies([self._example_ids]):
+                send_op = self._bridge.send_op(name, tensor)
         self._sends.append((name, tensor, require_grad))
         if require_grad:
             with tf.control_dependencies([send_op]):
                 return self.recv(name + '_grad', tensor.dtype)
         else:
             self._train_ops.append(send_op)
-
         return None
 
-    def recv(self, name, dtype=tf.float32, require_grad=False, shape=None):
-        with tf.control_dependencies([self._example_ids]):
+    def send_and_recv(self, name, tensor, recv_name=None, recv_dtype=None):
+        with tf.control_dependencies([tensor]):
+            send_op = self._bridge.send_op(name, tensor)
+        self._sends.append((name, tensor, False))
+        with tf.control_dependencies([send_op]):
+            if recv_name is None:
+                recv_name = name
+            if recv_dtype is None:
+                recv_dtype = tensor.dtype
+            receive_op = self.recv(recv_name, recv_dtype)
+            return receive_op
+
+    def recv(self, name, dtype=tf.float32, require_grad=False, shape=None, train_ops=True, depend_tensor=False):
+        if depend_tensor:
             receive_op = self._bridge.receive_op(name, dtype)
+        else:
+            with tf.control_dependencies([self._example_ids]):
+                receive_op = self._bridge.receive_op(name, dtype)
         if shape:
             receive_op = tf.ensure_shape(receive_op, shape)
         else:
@@ -80,7 +125,8 @@ class FLModel(object):
                 'Consider setting shape at model.recv(shape=(...)). '
                 'shape can have None dimensions '
                 'which matches to any length.', name)
-        self._train_ops.append(receive_op)
+        if train_ops:
+            self._train_ops.append(receive_op)
         self._recvs.append((name, receive_op, require_grad))
         return receive_op
 
@@ -164,6 +210,9 @@ class FLEstimator(object):
                  bridge,
                  role,
                  model_fn,
+                 self_seed=None,
+                 other_seed=None,
+                 batch_num=None,
                  is_chief=False):
         self._cluster_server = cluster_server
         self._bridge = bridge
@@ -172,16 +221,22 @@ class FLEstimator(object):
         self._trainer_master = trainer_master
         self._is_chief = is_chief
         self._input_hooks = []
+        self._self_seed = self_seed
+        self._other_seed = other_seed
+        self._batch_num = batch_num
+
+    @property
+    def role(self):
+        return self._role
 
     def _get_features_and_labels_from_input_fn(self, input_fn, mode):
-        features, labels, input_hooks = parse_input_fn_result(
-            input_fn(self._bridge, self._trainer_master))
+        features, labels, input_hooks = parse_input_fn_result(input_fn(self._bridge, self._trainer_master))
         self._input_hooks = input_hooks
         return features, labels
 
     def _get_model_spec(self, features, labels, mode):
         model = FLModel(self._role, self._bridge,
-                        features.get("example_id", None),
+                        features.get("example_id", None), self._self_seed, self._other_seed ,self._batch_num,
                         exporting=(mode == tf.estimator.ModeKeys.PREDICT))
         spec = self._model_fn(model, features, labels, mode)
         return spec, model

@@ -1,11 +1,11 @@
 # https://github.com/gramineproject/gramine/blob/master/.ci/ubuntu18.04.dockerfile
 
-FROM ubuntu:18.04
+FROM nvidia/cuda:12.1.0-devel-ubuntu18.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV INSTALL_PREFIX=/usr/local
-ENV LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${INSTALL_PREFIX}/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}
-ENV PATH=${INSTALL_PREFIX}/bin:${LD_LIBRARY_PATH}:${PATH}
+ENV LD_LIBRARY_PATH=${INSTALL_PREFIX}/lib:${INSTALL_PREFIX}/lib/x86_64-linux-gnu:/usr/local/cuda-12.4/lib64:${LD_LIBRARY_PATH}
+ENV PATH=${INSTALL_PREFIX}/bin:/usr/local/cuda-12.4/bin:${LD_LIBRARY_PATH}:${PATH}
 # For Gramine RA-TLS
 ENV PYTHONDONTWRITEBYTECODE=1
 
@@ -140,8 +140,43 @@ RUN cd ${TF_BUILD_PATH} \
 
 ARG TF_BUILD_CFG="--config=numa --config=mkl --config=mkl_threadpool --copt=-march=native --copt=-O3 --cxxopt=-march=native --cxxopt=-O3 --cxxopt=-D_GLIBCXX_USE_CXX11_ABI=0"
 RUN cd ${TF_BUILD_PATH} \
-    && bazel build --local_ram_resources=2048 -c opt ${TF_BUILD_CFG} //tensorflow/tools/pip_package:build_pip_package \
+    && bazel build -c opt ${TF_BUILD_CFG} //tensorflow/tools/pip_package:build_pip_package \
     && bazel-bin/tensorflow/tools/pip_package/build_pip_package ${TF_BUILD_OUTPUT}
+
+# add PPA for update GCC
+RUN apt-get update && \
+    apt-get install -y software-properties-common && \
+    add-apt-repository ppa:ubuntu-toolchain-r/test -y && \
+    apt-get update && \
+    apt-get install -y gcc-9 g++-9 --fix-missing && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 60 --slave /usr/bin/g++ g++ /usr/bin/g++-9
+
+#  set GCC and G++ default version are 9
+RUN update-alternatives --set gcc /usr/bin/gcc-9
+
+ENV TENSEAL_PATH=/tenseal
+ENV TENSEAL_VERSION=v0.3.14
+RUN git clone https://github.com/OpenMined/TenSEAL.git ${TENSEAL_PATH} \
+    && cd ${TENSEAL_PATH} \
+    && git checkout ${TENSEAL_VERSION} \
+    && git submodule init \
+    && git submodule update \
+    # The result of the matrix multiplication is 0, which may cause a TRANSPARENT_CIPHERTEXT issue. This exception needs to be disabled. \
+    && sed -i '6i set(SEAL_THROW_ON_TRANSPARENT_CIPHERTEXT OFF)' cmake/seal.cmake \
+    && pip3 install --no-compile .
+
+ENV CUDAToolkit_ROOT=/usr/local/cuda
+ENV SEAL_PATH=/troy-nova
+ENV SEAL_VERSION=c89a8980c2b266d9fe82f69b03f52b62abaecf5f
+RUN git clone https://github.com/lightbulb128/troy-nova.git ${SEAL_PATH} \
+    && cd ${SEAL_PATH} \
+    && git checkout ${SEAL_VERSION} \
+    && git submodule init \
+    && git submodule update \
+    && mkdir -p build \
+    && cd pybind \
+    && sed -i '16,$d' develop.sh \
+    && bash -x develop.sh
 
 # Build and install fedlearner
 COPY . ${FEDLEARNER_PATH}
@@ -168,7 +203,8 @@ RUN pip3 uninstall -y tensorflow tensorflow-io \
 RUN cd ${FEDLEARNER_PATH} \
     && make op \
     && mkdir -p /usr/local/lib/python3.6/dist-packages/cc \
-    && cp ./cc/embedding.so /usr/local/lib/python3.6/dist-packages/cc
+    && cp ./cc/embedding.so /usr/local/lib/python3.6/dist-packages/cc \
+    && cp /troy-nova/build/src/libtroy.so /usr/local/lib/python3.6/dist-packages/fedlearner/privacy/mpcnn
 
 # Re-install grpcio
 RUN pip3 uninstall -y grpcio \
@@ -195,6 +231,7 @@ RUN apt-get clean all \
     && rm -rf ~/.cache/* \
     && rm -rf /tmp/*
 
+ENV LD_LIBRARY_PATH=/usr/local/lib/python3.6/dist-packages/fedlearner/privacy/mpcnn:$LD_LIBRARY_PATH
 # Workspace
 ENV WORK_SPACE_PATH=${GRAMINEDIR}
 WORKDIR ${WORK_SPACE_PATH}

@@ -19,6 +19,7 @@ source ~/.env
 export CUDA_VISIBLE_DEVICES=
 unset HTTPS_PROXY https_proxy http_proxy ftp_proxy
 cp /app/sgx/gramine/CI-Examples/tensorflow_io.py ./
+cp /troy-nova/pybind/pytroy_raw.cpython-36m-x86_64-linux-gnu.so ./
 source /app/deploy/scripts/hdfs_common.sh || true
 source /app/deploy/scripts/pre_start_hook.sh || true
 source /app/deploy/scripts/env_to_args.sh
@@ -41,6 +42,9 @@ local_data_path=$(normalize_env_to_args "--local-data-path" $LOCAL_DATA_PATH)
 local_start_date=$(normalize_env_to_args "--local-start-date" $LOCAL_START_DATE)
 local_end_date=$(normalize_env_to_args "--local-end-date" $LOCAL_END_DATE)
 using_mt_hadoop=$(normalize_env_to_args "--using_mt_hadoop" $USING_MT_HADOOP)
+self_seed=$(normalize_env_to_args "--self-seed" $SELF_SEED)
+other_seed=$(normalize_env_to_args "--other-seed" $OTHER_SEED)
+num_example=$(normalize_env_to_args "--num-example" $NUM_EXAMPLE)
 
 if [ -n "$CHECKPOINT_PATH" ]; then
     checkpoint_path="--checkpoint-path=$CHECKPOINT_PATH"
@@ -92,6 +96,8 @@ fi
 
 cp /app/sgx/gramine/CI-Examples/tensorflow_io.py /gramine/follower/
 cp /app/sgx/gramine/CI-Examples/tensorflow_io.py /gramine/leader/
+cp /troy-nova/pybind/pytroy_raw.cpython-36m-x86_64-linux-gnu.so /gramine/leader/
+cp /troy-nova/pybind/pytroy_raw.cpython-36m-x86_64-linux-gnu.so /gramine/follower/
 source /app/deploy/scripts/sgx/enclave_env.sh master
 
 unset HTTPS_PROXY https_proxy http_proxy ftp_proxy
@@ -131,4 +137,4 @@ taskset -c $START_CPU_SN-$END_CPU_SN stdbuf -o0 gramine-sgx python /gramine/$ROL
     $local_data_source $local_data_path $local_start_date \
     $local_end_date $epoch_num $start_date $end_date \
     $shuffle $shuffle_in_day $extra_params $export_model \
-    $using_mt_hadoop
+    $using_mt_hadoop $self_seed $other_seed $num_example

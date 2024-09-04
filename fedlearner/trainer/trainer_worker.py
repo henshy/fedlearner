@@ -185,6 +185,18 @@ def create_argument_parser():
                         type=str,
                         default=None,
                         help="use Meituan hadoop to get or upload data")
+    parser.add_argument('--self-seed',
+                        type=str,
+                        default=None,
+                        help="self-generate-seed")
+    parser.add_argument('--other-seed',
+                        type=str,
+                        default=None,
+                        help="other-generate-seed")
+    parser.add_argument('--num-example',
+                        type=int,
+                        default=0,
+                        help="dataset example num")
     # 添加与label protection相关的参数
     parser.add_argument('--using_embedding_protection',
                         type=str_as_bool,
@@ -211,6 +223,14 @@ def create_argument_parser():
                         default='False',
                         help='Whether use norm attack.')
     return parser
+
+
+def _get_batch_num(args):
+    batch_num = None
+    if args.batch_size is not None and args.num_example is not None:
+        batch_num = (args.num_example * args.epoch_num) // args.batch_size
+    return batch_num
+
 
 def _run_master(role,
                 args,
@@ -282,7 +302,10 @@ def _run_master(role,
              sparse_estimator=args.sparse_estimator,
              export_model_hook=export_model_hook,
              export_model=args.export_model,
-             using_mt_hadoop=args.using_mt_hadoop)
+             using_mt_hadoop=args.using_mt_hadoop,
+             self_seed=args.self_seed,
+             other_seed=args.other_seed,
+             batch_num=_get_batch_num(args))
     master.run_forever(args.master_addr)
 
 def _run_worker(role, args, input_fn, model_fn):
@@ -326,6 +349,9 @@ def _run_worker(role, args, input_fn, model_fn):
                                   bridge,
                                   role,
                                   model_fn,
+                                  args.self_seed,
+                                  args.other_seed,
+                                  batch_num=_get_batch_num(args),
                                   is_chief=args.worker_rank == 0)
 
     if mode == 'train':
@@ -369,7 +395,11 @@ def _run_local(role,
              export_path=args.export_path,
              sparse_estimator=args.sparse_estimator,
              export_model_hook=export_model_hook,
-             export_model=args.export_model)
+             export_model=args.export_model,
+             using_mt_hadoop=args.using_mt_hadoop,
+             self_seed=args.self_seed,
+             other_seed=args.other_seed,
+             batch_num=_get_batch_num(args))
     master_thread = threading.Thread(target=local_master.run_forever)
     master_thread.setDaemon(True)
     master_thread.start()
@@ -398,7 +428,10 @@ def _run_local(role,
                                   trainer_master,
                                   bridge,
                                   role,
-                                  model_fn)
+                                  model_fn,
+                                  args.self_seed,
+                                  args.other_seed,
+                                  batch_num=_get_batch_num(args))
 
     if mode == 'train':
         estimator.train(input_fn)
@@ -494,6 +527,12 @@ def _create_data_visitor(args):
                          "[--data-path and --data-path-wildcard]")
     return visitor
 
+
+def _set_mpc_seed(role, args):
+    if role.lower == FOLLOER and args.self_seed and args.other_seed:
+        args.self_seed, args.other_seed = args.other_seed, args.self_seed
+
+
 def train(role,
           args,
           input_fn,
@@ -517,6 +556,8 @@ def train(role,
     mode = args.mode.lower()
     if mode not in ('train', 'eval'):
         raise ValueError("--mode must set one of 'train' or 'eval'")
+
+    _set_mpc_seed(role, args)
 
     if not (args.master or args.worker):
         _gctx.task = "local"

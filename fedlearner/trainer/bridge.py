@@ -203,7 +203,7 @@ class Bridge(object):
         self._channel.close()
 
     def _stream_transmit_fn(self):
-        IDLE_TIMEOUT = 30
+        IDLE_TIMEOUT = 3600
         fl_logging.debug("[Bridge] stream transmit started")
 
         def request_iterator():
@@ -445,7 +445,7 @@ class Bridge(object):
         def func(x):
             self.send(name, x)
 
-        return tf.py_function(func=func, inp=[x], Tout=[], name='send_'+name)
+        return tf.numpy_function(func=func, inp=[x], Tout=[], name='send_'+name)
 
     def _receive(self, name):
         start_time = time.time()
@@ -499,7 +499,7 @@ class Bridge(object):
         def func():
             return tf.convert_to_tensor(self.receive(name), dtype=dtype)
 
-        return tf.py_function(func=func, inp=[], Tout=dtype, name='recv_'+name)
+        return tf.numpy_function(func=func, inp=[], Tout=dtype, name='recv_'+name)
 
 
 class FakeBridge(object):

@@ -32,6 +32,7 @@ fi
 echo $PROXY_LOCAL_PORT > /pod-data/proxy_local_port
 
 cp /app/sgx/gramine/CI-Examples/tensorflow_io.py ./
+cp /troy-nova/pybind/pytroy_raw.cpython-36m-x86_64-linux-gnu.so ./
 unset HTTPS_PROXY https_proxy http_proxy ftp_proxy
 source /app/deploy/scripts/hdfs_common.sh || true
 source /app/deploy/scripts/pre_start_hook.sh || true
@@ -47,6 +48,8 @@ fi
 
 cp /app/sgx/gramine/CI-Examples/tensorflow_io.py /gramine/follower/
 cp /app/sgx/gramine/CI-Examples/tensorflow_io.py /gramine/leader/
+cp /troy-nova/pybind/pytroy_raw.cpython-36m-x86_64-linux-gnu.so /gramine/leader/
+cp /troy-nova/pybind/pytroy_raw.cpython-36m-x86_64-linux-gnu.so /gramine/follower/
 source /app/deploy/scripts/sgx/enclave_env.sh worker
 
 mode=$(normalize_env_to_args "--mode" "$MODE")
@@ -62,6 +65,9 @@ sumkl_threshold=$(normalize_env_to_args "--sumkl_threshold" $SUMKL_THRESHOLD)
 using_emb_attack=$(normalize_env_to_args "--using_emb_attack" $USING_EMB_ATTACK)
 using_norm_attack=$(normalize_env_to_args "--using_norm_attack" $USING_NORM_ATTACK)
 using_mt_hadoop=$(normalize_env_to_args "--using_mt_hadoop" $USING_MT_HADOOP)
+self_seed=$(normalize_env_to_args "--self-seed" $SELF_SEED)
+other_seed=$(normalize_env_to_args "--other-seed" $OTHER_SEED)
+num_example=$(normalize_env_to_args "--num-example" $NUM_EXAMPLE)
 
 
 if [ -n "$CLUSTER_SPEC" ]; then
@@ -122,4 +128,4 @@ taskset -c $START_CPU_SN-$END_CPU_SN stdbuf -o0 gramine-sgx python /gramine/$ROL
     $server_port $mode $batch_size \
     $sparse_estimator $learning_rate \
     $using_embedding_protection $using_marvell_protection $discorloss_weight $sumkl_threshold $using_emb_attack $using_norm_attack \
-    $using_mt_hadoop
+    $using_mt_hadoop $self_seed $other_seed $num_example

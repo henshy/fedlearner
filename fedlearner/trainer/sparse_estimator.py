@@ -28,12 +28,12 @@ class ConfigRunError(Exception):
 
 
 class SparseFLModel(estimator.FLModel):
-    def __init__(self, role, bridge, example_ids, exporting=False,
+    def __init__(self, role, bridge, example_ids, self_seed, other_seed, batch_num, exporting=False,
                  config_run=True,
                  bias_tensor=None, vec_tensor=None,
                  bias_embedding=None, vec_embedding=None):
         super(SparseFLModel, self).__init__(role,
-            bridge, example_ids, exporting)
+            bridge, example_ids, self_seed, other_seed, batch_num, exporting)
 
         self._config_run = config_run
         self._num_shards = 1
@@ -228,13 +228,20 @@ class SparseFLEstimator(estimator.FLEstimator):
                  bridge,
                  role,
                  model_fn,
+                 self_seed=None,
+                 other_seed=None,
+                 batch_num=None,
                  is_chief=False):
         super(SparseFLEstimator, self).__init__(
-            cluster_server, trainer_master, bridge, role, model_fn, is_chief)
+            cluster_server, trainer_master, bridge, role, model_fn, self_seed, other_seed, batch_num, is_chief)
 
         self._bias_slot_configs = None
         self._vec_slot_configs = None
         self._slot_configs = None
+        self._end_of_data_reached = False
+        self._self_seed = self_seed
+        self._other_seed = other_seed
+        self._batch_num = batch_num
         try:
             ps_indices = cluster_server.cluster_spec.task_indices('ps')
         except ValueError:
@@ -259,7 +266,7 @@ class SparseFLEstimator(estimator.FLEstimator):
         with tf.Graph().as_default() as g:
             M = SparseFLModel(self._role,
                               self._bridge,
-                              None, #features['example_id'],
+                              None, self._self_seed, self._other_seed, self._batch_num, #features['example_id'],
                               config_run=True)
             try:
                 self._model_fn(M, None, None, mode) # features, labels, mode)
@@ -310,6 +317,8 @@ class SparseFLEstimator(estimator.FLEstimator):
 
         model = SparseFLModel(self._role, self._bridge,
                               features.get('example_id', None),
+                              self._self_seed,
+                              self._other_seed,
                               config_run=False,
                               bias_tensor=bias_tensor,
                               bias_embedding=bias_embedding,

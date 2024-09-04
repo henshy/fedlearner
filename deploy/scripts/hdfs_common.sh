@@ -18,6 +18,7 @@ then
 
     if [[ "$USING_MT_HADOOP" == "True" ]]; then
         echo "mt kerberos auth"
+        export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
         python3 /app/deploy/scripts/mt_auth_util.py ${HADOOP_USER_NAME}
         export KRB5CCNAME=/tmp/krb5cc_0
         echo $KRB5CCNAME

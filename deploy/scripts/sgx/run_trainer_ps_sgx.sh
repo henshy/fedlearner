@@ -18,6 +18,7 @@ set -ex
 source ~/.env
 export CUDA_VISIBLE_DEVICES=
 cp /app/sgx/gramine/CI-Examples/tensorflow_io.py ./
+cp /troy-nova/pybind/pytroy_raw.cpython-36m-x86_64-linux-gnu.so ./
 unset HTTPS_PROXY https_proxy http_proxy ftp_proxy
 source /app/deploy/scripts/hdfs_common.sh || true
 source /app/deploy/scripts/pre_start_hook.sh || true
@@ -36,6 +37,8 @@ fi
 
 cp /app/sgx/gramine/CI-Examples/tensorflow_io.py /gramine/leader
 cp /app/sgx/gramine/CI-Examples/tensorflow_io.py /gramine/follower
+cp /troy-nova/pybind/pytroy_raw.cpython-36m-x86_64-linux-gnu.so /gramine/leader/
+cp /troy-nova/pybind/pytroy_raw.cpython-36m-x86_64-linux-gnu.so /gramine/follower/
 source /app/deploy/scripts/sgx/enclave_env.sh ps
 
 make_custom_env 4
