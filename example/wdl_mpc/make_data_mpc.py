@@ -22,9 +22,9 @@ import tensorflow.compat.v1 as tf
 from tensorflow.train import Example, Feature, Features, Int64List, BytesList
 
 current_dir = os.path.dirname(__file__)
-shutil.rmtree(os.path.join(current_dir, '../wide_n_deep/data'), ignore_errors=True)
-os.makedirs(os.path.join(current_dir, '../wide_n_deep/data/leader/0'))
-os.makedirs(os.path.join(current_dir, '../wide_n_deep/data/follower/0'))
+shutil.rmtree(os.path.join(current_dir, './data'), ignore_errors=True)
+os.makedirs(os.path.join(current_dir, './data/leader/0'))
+os.makedirs(os.path.join(current_dir, './data/follower/0'))
 
 N = 10
 chunk_size = 200
